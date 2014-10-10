@@ -22,7 +22,12 @@ trait TypeCasting
             if (!isset($this->$name)) continue;
             
             if (isset($meta['var'])) {
-                $this->$name = static::castValue($this->$name, $meta['var']);
+                try {
+                    $this->$name = static::castValue($this->$name, $meta['var']);
+                } catch (\Exception $e) {
+                    $desc = get_called_class() . (method_exists($this, '__toString') ? " '" . (string)$this . "'" : '');
+                    trigger_error($e->getMessage() . " for property '$name' of $desc", E_USER_NOTICE);
+                }
             }
         }
         
@@ -41,9 +46,12 @@ trait TypeCasting
     {
         if ($type === 'bool') $type = 'boolean';
         if ($type === 'int') $type = 'integer';
+
+        // Cast to empty array
+        if (is_null($value) && $type === 'array') return [];
         
         // No casting needed
-            if (is_null($value) || (is_object($value) && is_a($value, $type)) || gettype($value) === $type) {
+        if (is_null($value) || (is_object($value) && is_a($value, $type)) || gettype($value) === $type) {
             return $value;
         }
         
@@ -68,20 +76,13 @@ trait TypeCasting
     {
         if ($value instanceof \DateTime) return $value->format('c');
 
-        if (is_resource($value)) {
-            trigger_error("Unable to cast a " . get_resource_type($value) . " resource to a string", E_USER_WARNING);
-            return $value;
-        }
+        if (is_resource($value))
+            throw new \Exception("Unable to cast a " . get_resource_type($value) . " resource to a string");
         
-        if (is_array($value)) {
-            trigger_error("Unable to cast an array to a string", E_USER_WARNING);
-            return $value;
-        }
+        if (is_array($value)) throw new \Exception("Unable to cast an array to a string");
         
-        if (is_object($value) && !method_exists($value, '__toString')) {
-            trigger_error("Unable to cast a " . get_class($value).  " object to a string", E_USER_WARNING);
-            return $value;
-        }
+        if (is_object($value) && !method_exists($value, '__toString'))
+            throw new \Exception("Unable to cast a " . get_class($value).  " object to a string");
         
         return (string)$value;
     }
@@ -94,27 +95,19 @@ trait TypeCasting
      */
     protected static function castValueToBoolean($value)
     {
-        if (is_resource($value)) {
-            trigger_error("Unable to cast a " . get_resource_type($value) . " resource to a boolean", E_USER_WARNING);
-            return $value;
-        }
+        if (is_resource($value))
+            throw new \Exception("Unable to cast a " . get_resource_type($value) . " resource to a boolean");
         
-        if (is_object($value)) {
-            trigger_error("Unable to cast a " . get_class($value) . " object to a boolean", E_USER_WARNING);
-            return $value;
-        }
+        if (is_object($value))
+            throw new \Exception("Unable to cast a " . get_class($value) . " object to a boolean");
         
-        if (is_array($value)) {
-            trigger_error("Unable to cast an array to a boolean", E_USER_WARNING);
-            return $value;
-        }
+        if (is_array($value)) throw new \Exception("Unable to cast an array to a boolean");
         
         if (is_string($value)) {
             if (in_array(strtolower($value), ['1', 'true', 'yes', 'on'])) return true;
             if (in_array(strtolower($value), ['', '0', 'false', 'no', 'off'])) return false;
             
-            trigger_error("Unable to cast string \"$value\" to a boolean", E_USER_WARNING);
-            return $value;
+            throw new \Exception("Unable to cast string \"$value\" to a boolean");
         }
         
         return (bool)$value;
@@ -151,27 +144,19 @@ trait TypeCasting
      */
     protected static function castValueToNumber($type, $value)
     {
-        if (is_resource($value)) {
-            trigger_error("Unable to cast a " . get_resource_type($value) . " resource to a $type", E_USER_WARNING);
-            return $value;
-        }
+        if (is_resource($value))
+            throw new \Exception("Unable to cast a " . get_resource_type($value) . " resource to a $type");
         
-        if (is_object($value)) {
-            trigger_error("Unable to cast a " . get_class($value) . " object to a $type", E_USER_WARNING);
-            return $value;
-        }
+        if (is_object($value))
+            throw new \Exception("Unable to cast a " . get_class($value) . " object to a $type");
         
-        if (is_array($value)) {
-            trigger_error("Unable to cast an array to a $type", E_USER_WARNING);
-            return $value;
-        }
+        if (is_array($value))
+            throw new \Exception("Unable to cast an array to a $type");
         
         if (is_string($value)) {
             $value = trim($value);
-            if (!is_numeric(trim($value)) && $value !== '') {
-                trigger_error("Unable to cast string \"$value\" to a $type", E_USER_WARNING);
-                return $value;
-            }
+            if (!is_numeric($value) && $value !== '')
+                throw new \Exception("Unable to cast string \"$value\" to a $type");
         }
         
         settype($value, $type);
@@ -206,15 +191,11 @@ trait TypeCasting
      */
     protected static function castValueToObject($value)
     {
-        if (is_resource($value)) {
-            trigger_error("Unable to cast a " . get_resource_type($value) . " resource to an object", E_USER_WARNING);
-            return $value;
-        }
+        if (is_resource($value))
+            throw new \Exception("Unable to cast a " . get_resource_type($value) . " resource to an object");
         
-        if (is_scalar($value)) {
-            trigger_error("Unable to cast a ". gettype($value) . " to an object.", E_USER_WARNING);
-            return $value;
-        }
+        if (is_scalar($value))
+            throw new \Exception("Unable to cast a ". gettype($value) . " to an object.");
         
         return (object)$value;
     }
@@ -227,8 +208,7 @@ trait TypeCasting
      */
     protected static function castValueToResource($value)
     {
-        trigger_error("Unable to cast a ". gettype($value) . " to a resource.", E_USER_WARNING);
-        return $value;
+        throw new \Exception("Unable to cast a ". gettype($value) . " to a resource.");
     }
     
     /**
@@ -240,7 +220,8 @@ trait TypeCasting
      */
     protected static function castValueToClass($value, $type)
     {
-        if (!class_exists($type)) throw new \Exception("Invalid type '$type'");
+        if (!class_exists($type)) throw new \Exception("Unable to cast to invalid/unknown type '$type'");
+        
         return new $type($value);
     }
 }
